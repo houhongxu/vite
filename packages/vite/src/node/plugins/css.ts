@@ -104,6 +104,7 @@ import { getChunkOriginalFileName } from './manifest'
 const decoder = new TextDecoder()
 // const debug = createDebugger('vite:css')
 
+// HHX 内置postcss和less scss sass
 export interface CSSOptions {
   /**
    * Using lightningcss is an experimental option to handle CSS modules,
