@@ -536,7 +536,7 @@ function resolveConfigToBuild(
   )
 }
 
-// HHX 打包
+//// 打包
 /**
  * Build an App environment, or a App library (if libraryOptions is provided)
  **/
@@ -601,7 +601,7 @@ async function buildEnvironment(
     injectEnvironmentToHooks(environment, p),
   )
 
-  // HHX 获取处理好的rollupOptions
+  //// 获取处理好的rollupOptions
   const rollupOptions: RollupOptions = {
     preserveEntrySignatures: ssr
       ? 'allow-extension'
@@ -899,7 +899,7 @@ function prepareOutDir(
 
 type JsExt = 'js' | 'cjs' | 'mjs'
 
-// HHX 解析文件后缀
+//// 解析文件后缀
 function resolveOutputJsExtension(
   format: ModuleFormat,
   type: string = 'commonjs',
@@ -911,7 +911,7 @@ function resolveOutputJsExtension(
   }
 }
 
-// HHX 解析文件名
+//// 解析文件名
 export function resolveLibFilename(
   libOptions: LibraryOptions,
   format: ModuleFormat,

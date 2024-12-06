@@ -75,7 +75,7 @@ type TSConfigJSON = {
 }
 type TSCompilerOptions = NonNullable<TSConfigJSON['compilerOptions']>
 
-// HHX 使用esbuild作为 transformer
+//// 使用esbuild作为 transformer
 export async function transformWithEsbuild(
   code: string,
   filename: string,
@@ -239,7 +239,7 @@ export async function transformWithEsbuild(
   }
 }
 
-// HHX esbuild dev插件
+//// esbuild dev插件
 export function esbuildPlugin(config: ResolvedConfig): Plugin {
   const options = config.esbuild as ESBuildOptions
   const { jsxInject, include, exclude, ...esbuildTransformOptions } = options
@@ -301,7 +301,7 @@ export function esbuildPlugin(config: ResolvedConfig): Plugin {
   }
 }
 
-// HHX esbuild不使用iife
+//// esbuild不使用iife
 const rollupToEsbuildFormatMap: Record<
   string,
   TransformOptions['format'] | undefined
@@ -320,7 +320,7 @@ const rollupToEsbuildFormatMap: Record<
   iife: undefined,
 }
 
-// HHX rollup插件使用esbuild
+//// rollup插件使用esbuild
 export const buildEsbuildPlugin = (config: ResolvedConfig): Plugin => {
   return {
     name: 'vite:esbuild-transpile',
@@ -376,7 +376,7 @@ export const buildEsbuildPlugin = (config: ResolvedConfig): Plugin => {
   }
 }
 
-// HHX 使用esbuild配置，包括了 minify
+//// 使用esbuild配置，包括了 minify
 export function resolveEsbuildTranspileOptions(
   config: ResolvedConfig,
   format: InternalModuleFormat,
@@ -474,7 +474,7 @@ function prettifyMessage(m: Message, code: string): string {
   return res + `\n`
 }
 
-// HHX tsconfck检测tsconfig有效性
+//// tsconfck检测tsconfig有效性
 
 let globalTSConfckCache: TSConfckCache<TSConfckParseResult> | undefined
 const tsconfckCacheMap = new WeakMap<
@@ -505,7 +505,7 @@ export async function loadTsconfigJsonForFile(
   return { tsconfigFile, tsconfig }
 }
 
-// HHX 更新tsconfig重新加载dev server
+//// 更新tsconfig重新加载dev server
 
 export async function reloadOnTsconfigChange(
   server: ViteDevServer,
@@ -534,7 +534,7 @@ export async function reloadOnTsconfigChange(
       // reset tsconfck cache so that recompile works with up2date configs
       cache.clear()
 
-      // HHX 使用hot热更新事件触发重新加载
+      //// 使用hot热更新事件触发重新加载
       // reload environments
       for (const environment of Object.values(server.environments)) {
         environment.hot.send({

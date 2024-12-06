@@ -57,6 +57,7 @@ disallowedVariables.forEach((name) => {
   })
 })
 
+//// js cjs api 弃用警告，这个文件就是cjs导出文件
 function warnCjsUsage() {
   if (process.env.VITE_CJS_IGNORE_WARNING) return
   const logLevelIndex = process.argv.findIndex((arg) =>

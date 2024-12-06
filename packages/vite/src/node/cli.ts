@@ -37,6 +37,7 @@ interface BuilderCLIOptions {
   app?: boolean
 }
 
+//// 停止性能分析
 let profileSession = global.__vite_profile_session
 let profileCount = 0
 
