@@ -13,9 +13,13 @@ export function getResolvedOutDirs(
   outDir: string,
   outputOptions: OutputOptions[] | OutputOptions | undefined,
 ): Set<string> {
+  //// 绝对路径
   const resolvedOutDir = path.resolve(root, outDir)
+
+  ////  没有rollup配置则直接返回
   if (!outputOptions) return new Set([resolvedOutDir])
 
+  //// 优先使用rollup配置
   return new Set(
     arraify(outputOptions).map(({ dir }) =>
       dir ? path.resolve(root, dir) : resolvedOutDir,
@@ -31,6 +35,7 @@ export function resolveEmptyOutDir(
 ): boolean {
   if (emptyOutDir != null) return emptyOutDir
 
+  //// 若 outDir 在根目录之外则会抛出一个警告避免意外删除掉重要的文件
   for (const outDir of outDirs) {
     if (!normalizePath(outDir).startsWith(withTrailingSlash(root))) {
       // warn if outDir is outside of root
@@ -55,6 +60,8 @@ export function resolveChokidarOptions(
   cacheDir: string,
 ): WatchOptions {
   const { ignored: ignoredList, ...otherOptions } = options ?? {}
+
+  //// 忽略的路径
   const ignored: WatchOptions['ignored'] = [
     '**/.git/**',
     '**/node_modules/**',
@@ -62,6 +69,8 @@ export function resolveChokidarOptions(
     escapePath(cacheDir) + '/**',
     ...arraify(ignoredList || []),
   ]
+
+  //// clean产物时也忽略产物文件夹
   if (emptyOutDir) {
     ignored.push(
       ...[...resolvedOutDirs].map((outDir) => escapePath(outDir) + '/**'),

@@ -210,6 +210,7 @@ function defaultCreateClientDevEnvironment(
   config: ResolvedConfig,
   context: CreateDevEnvironmentContext,
 ) {
+  //// 创建符合client配置的DevEnvironment实例
   return new DevEnvironment(name, config, {
     hot: true,
     transport: context.ws,
@@ -217,6 +218,7 @@ function defaultCreateClientDevEnvironment(
 }
 
 function defaultCreateDevEnvironment(name: string, config: ResolvedConfig) {
+  //// 创建DevEnvironment实例
   return createRunnableDevEnvironment(name, config)
 }
 
@@ -716,6 +718,7 @@ export function resolveDevEnvironmentOptions(
       ...configDefaults.dev,
       sourcemapIgnoreList: isInNodeModules,
       preTransformRequests: consumer === 'client',
+      //// 默认的dev环境
       createEnvironment:
         environmentName === 'client'
           ? defaultCreateClientDevEnvironment
@@ -747,11 +750,18 @@ function resolveEnvironmentOptions(
   skipSsrTransform?: boolean,
   isSsrTargetWebworkerSet?: boolean,
 ): ResolvedEnvironmentOptions {
+  //// 是否client环境
   const isClientEnvironment = environmentName === 'client'
+
+  //// 环境消费者是否服务端
   const consumer =
     options.consumer ?? (isClientEnvironment ? 'client' : 'server')
+
+  //// config.ssr?.target === 'webworker'
   const isSsrTargetWebworkerEnvironment =
     isSsrTargetWebworkerSet && environmentName === 'ssr'
+
+  //// 解析config.resolve配置
   const resolve = resolveEnvironmentResolveOptions(
     options.resolve,
     alias,
@@ -760,6 +770,7 @@ function resolveEnvironmentOptions(
     consumer,
     isSsrTargetWebworkerEnvironment,
   )
+
   return {
     define: options.define,
     resolve,
@@ -772,6 +783,7 @@ function resolveEnvironmentOptions(
       resolve.preserveSymlinks,
       consumer,
     ),
+    //// 解析环境的dev配置
     dev: resolveDevEnvironmentOptions(
       options.dev,
       environmentName,
@@ -968,17 +980,26 @@ export async function resolveConfig(
   patchPlugins: ((resolvedPlugins: Plugin[]) => void) | undefined = undefined,
 ): Promise<ResolvedConfig> {
   let config = inlineConfig
+
+  //// 配置文件依赖
   let configFileDependencies: string[] = []
+
+  //// 默认模式为development
   let mode = inlineConfig.mode || defaultMode
+
   const isNodeEnvSet = !!process.env.NODE_ENV
+
+  //// 包缓存
   const packageCache: PackageCache = new Map()
 
+  //// 默认NODE_ENV为development
   // some dependencies e.g. @vue/compiler-* relies on NODE_ENV for getting
   // production-specific behavior, so set it early on
   if (!isNodeEnvSet) {
     process.env.NODE_ENV = defaultNodeEnv
   }
 
+  //// 环境相关的配置
   const configEnv: ConfigEnv = {
     mode,
     command,
@@ -986,7 +1007,10 @@ export async function resolveConfig(
     isPreview,
   }
 
+  //// configFile指明要使用的配置文件
   let { configFile } = config
+
+  //// configFile不是false时读取配置
   if (configFile !== false) {
     const loadResult = await loadConfigFromFile(
       configEnv,
@@ -1002,10 +1026,13 @@ export async function resolveConfig(
     }
   }
 
+  //// 获取mode
   // user config may provide an alternative mode. But --mode has a higher priority
   mode = inlineConfig.mode || config.mode || mode
+
   configEnv.mode = mode
 
+  //// 插件筛选当前command的
   const filterPlugin = (p: Plugin) => {
     if (!p) {
       return false
@@ -1019,21 +1046,28 @@ export async function resolveConfig(
   }
 
   // resolve plugins
+  //// 获取异步调用后的插件数组
   const rawPlugins = (
     (await asyncFlatten(config.plugins || [])) as Plugin[]
   ).filter(filterPlugin)
 
+  //// 插件数组根据enforce排序
   const [prePlugins, normalPlugins, postPlugins] = sortUserPlugins(rawPlugins)
 
   const isBuild = command === 'build'
 
   // run config hooks
   const userPlugins = [...prePlugins, ...normalPlugins, ...postPlugins]
+
+  //// 执行插件config钩子
   config = await runConfigHook(config, userPlugins, configEnv)
 
+  //// 确保环境中有默认的client和ssr
   // Ensure default client and ssr environments
   // If there are present, ensure order { client, ssr, ...custom }
   config.environments ??= {}
+
+  //// 默认的ssr
   if (
     !config.environments.ssr &&
     (!isBuild || config.ssr || config.build?.ssr)
@@ -1046,40 +1080,57 @@ export async function resolveConfig(
     // in the environments config
     config.environments = { ssr: {}, ...config.environments }
   }
+
+  //// 默认的client
   if (!config.environments.client) {
     config.environments = { client: {}, ...config.environments }
   }
 
+  //// 定义logger
   // Define logger
   const logger = createLogger(config.logLevel, {
     allowClearScreen: config.clearScreen,
     customLogger: config.customLogger,
   })
 
+  //// 解析root
   // resolve root
   const resolvedRoot = normalizePath(
     config.root ? path.resolve(config.root) : process.cwd(),
   )
 
+  //// 判断路径合法
   checkBadCharactersInPath(resolvedRoot, logger)
 
+  //// client环境
   const configEnvironmentsClient = config.environments!.client!
+
+  //// 初始化client环境dev
   configEnvironmentsClient.dev ??= {}
 
+  //// 淘汰的配置不看
   const deprecatedSsrOptimizeDepsConfig = config.ssr?.optimizeDeps ?? {}
+
+  //// ssr环境
   let configEnvironmentsSsr = config.environments!.ssr
 
+  //// 提前转换和缓存文件以进行预热
   // Backward compatibility: server.warmup.clientFiles/ssrFiles -> environment.dev.warmup
   const warmupOptions = config.server?.warmup
+
+  //// 配置到client环境dev上
   if (warmupOptions?.clientFiles) {
     configEnvironmentsClient.dev.warmup = warmupOptions?.clientFiles
   }
+
+  //// 初始化并配置到ssr环境dev上
   if (warmupOptions?.ssrFiles) {
     configEnvironmentsSsr ??= {}
     configEnvironmentsSsr.dev ??= {}
     configEnvironmentsSsr.dev.warmup = warmupOptions?.ssrFiles
   }
 
+  //// 兼容ssr配置到ssr环境上
   // Backward compatibility: merge ssr into environments.ssr.config as defaults
   if (configEnvironmentsSsr) {
     configEnvironmentsSsr.optimizeDeps = mergeConfig(
@@ -1102,6 +1153,7 @@ export async function resolveConfig(
     configEnvironmentsSsr.build.emitAssets = config.build.ssrEmitAssets
   }
 
+  //// 没有默认环境则报错
   // The client and ssr environment configs can't be removed by the user in the config hook
   if (
     !config.environments ||
@@ -1113,14 +1165,19 @@ export async function resolveConfig(
     )
   }
 
+  //// 获取默认环境配置
   // Merge default environment config values
   const defaultEnvironmentOptions = getDefaultEnvironmentOptions(config)
+
+  //// 获取默认client环境配置
   // Some top level options only apply to the client environment
   const defaultClientEnvironmentOptions: UserConfig = {
     ...defaultEnvironmentOptions,
     resolve: config.resolve, // inherit everything including mainFields and conditions
     optimizeDeps: config.optimizeDeps,
   }
+
+  //// 获取默认非client环境配置
   const defaultNonClientEnvironmentOptions: UserConfig = {
     ...defaultEnvironmentOptions,
     dev: {
@@ -1134,6 +1191,7 @@ export async function resolveConfig(
     },
   }
 
+  //// 给每个环境赋予默认配置
   for (const name of Object.keys(config.environments)) {
     config.environments[name] = mergeConfig(
       name === 'client'
@@ -1143,6 +1201,7 @@ export async function resolveConfig(
     )
   }
 
+  //// 执行插件config environment钩子
   await runConfigEnvironmentHook(
     config.environments,
     userPlugins,
@@ -1150,9 +1209,12 @@ export async function resolveConfig(
     config.ssr?.target === 'webworker',
   )
 
+  //// 解析默认的config.resolve配置
   const resolvedDefaultResolve = resolveResolveOptions(config.resolve, logger)
 
+  //// 解析每个环境的配置
   const resolvedEnvironments: Record<string, ResolvedEnvironmentOptions> = {}
+
   for (const environmentName of Object.keys(config.environments)) {
     resolvedEnvironments[environmentName] = resolveEnvironmentOptions(
       config.environments[environmentName],
@@ -1612,6 +1674,7 @@ export function resolveBaseUrl(
   return base
 }
 
+//// 根据enforce排序插件
 export function sortUserPlugins(
   plugins: (Plugin | Plugin[])[] | undefined,
 ): [Plugin[], Plugin[], Plugin[]] {
@@ -1641,36 +1704,49 @@ export async function loadConfigFromFile(
   config: UserConfig
   dependencies: string[]
 } | null> {
+  //// 读取配置说明构建的开始时间
   const start = performance.now()
+
+  //// 获取用时
   const getTime = () => `${(performance.now() - start).toFixed(2)}ms`
 
+  //// 解析的配置文件路径
   let resolvedPath: string | undefined
 
   if (configFile) {
+    //// 有configFile则使用
     // explicit config path is always resolved from cwd
     resolvedPath = path.resolve(configFile)
   } else {
+    //// 没有configFile则使用默认路径
     // implicit config file loaded from inline root (if present)
     // otherwise from cwd
     for (const filename of DEFAULT_CONFIG_FILES) {
       const filePath = path.resolve(configRoot, filename)
+
       if (!fs.existsSync(filePath)) continue
 
       resolvedPath = filePath
+
       break
     }
   }
 
+  //// 没有解析的配置文件路径则报错
   if (!resolvedPath) {
     debug?.('no config file found.')
     return null
   }
 
+  //// 是否esm路径，忽略了ts后缀
   const isESM =
     typeof process.versions.deno === 'string' || isFilePathESM(resolvedPath)
 
   try {
+    //// TODO 先打包
     const bundled = await bundleConfigFile(resolvedPath, isESM)
+
+    /// TODO 解析用户配置
     const userConfig = await loadConfigFromBundledFile(
       resolvedPath,
       bundled.code,
@@ -1903,6 +1979,7 @@ async function loadConfigFromBundledFile(
   }
 }
 
+//// TODO 执行插件config钩子
 async function runConfigHook(
   config: InlineConfig,
   plugins: Plugin[],
@@ -1924,6 +2001,7 @@ async function runConfigHook(
   return conf
 }
 
+//// TODO 执行插件config environment钩子https://cn.vitejs.dev/guide/api-environment-plugins.html#configuring-environment-using-hooks
 async function runConfigEnvironmentHook(
   environments: Record<string, EnvironmentOptions>,
   plugins: Plugin[],

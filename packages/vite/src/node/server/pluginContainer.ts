@@ -940,10 +940,12 @@ export type {
   TransformResult,
 }
 
+//// 插件容器类
 // Backward compatibility
 class PluginContainer {
   constructor(private environments: Record<string, Environment>) {}
 
+  //// 获取环境
   // Backward compatibility
   // Users should call pluginContainer.resolveId (and load/transform) passing the environment they want to work with
   // But there is code that is going to call it without passing an environment, or with the ssr flag to get the ssr environment
@@ -951,11 +953,13 @@ class PluginContainer {
     ssr?: boolean
     environment?: Environment
   }) {
+    //// 默认client环境
     return options?.environment
       ? options.environment
       : this.environments?.[options?.ssr ? 'ssr' : 'client']
   }
 
+  //// 获取环境上面的pluginContainer
   private _getPluginContainer(options?: {
     ssr?: boolean
     environment?: Environment
@@ -963,6 +967,7 @@ class PluginContainer {
     return (this._getEnvironment(options) as DevEnvironment).pluginContainer
   }
 
+  //// 获取client环境上面的getModuleInfo，没有就ssr环境
   getModuleInfo(id: string): ModuleInfo | null {
     return (
       (
@@ -974,6 +979,7 @@ class PluginContainer {
     )
   }
 
+  //// 获取client环境上面的options
   get options(): InputOptions {
     return (this.environments.client as DevEnvironment).pluginContainer.options
   }
@@ -981,12 +987,14 @@ class PluginContainer {
   // For backward compatibility, buildStart and watchChange are called only for the client environment
   // buildStart is called per environment for a plugin with the perEnvironmentStartEndDuring dev flag
 
+  //// 获取client环境上面的buildStart
   async buildStart(_options?: InputOptions): Promise<void> {
     ;(this.environments.client as DevEnvironment).pluginContainer.buildStart(
       _options,
     )
   }
 
+  //// 获取client环境上面的watchChange
   async watchChange(
     id: string,
     change: { event: 'create' | 'update' | 'delete' },
@@ -997,6 +1005,7 @@ class PluginContainer {
     )
   }
 
+  //// 获取指定环境的resolveId
   async resolveId(
     rawId: string,
     importer?: string,
@@ -1015,6 +1024,7 @@ class PluginContainer {
     return this._getPluginContainer(options).resolveId(rawId, importer, options)
   }
 
+  //// 获取指定环境的load
   async load(
     id: string,
     options?: {
@@ -1024,6 +1034,7 @@ class PluginContainer {
     return this._getPluginContainer(options).load(id)
   }
 
+  //// 获取指定环境的transform
   async transform(
     code: string,
     id: string,

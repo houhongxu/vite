@@ -8,27 +8,39 @@ import {
   recursiveReaddir,
 } from './utils'
 
+//// 缓存publicFiles
 const publicFilesMap = new WeakMap<ResolvedConfig, Set<string>>()
 
+//// 初始化public目录
 export async function initPublicFiles(
   config: ResolvedConfig,
 ): Promise<Set<string> | undefined> {
   let fileNames: string[]
+
   try {
+    //// 读取文件路径，感觉可以用fse
     fileNames = await recursiveReaddir(config.publicDir)
   } catch (e) {
+    //// 忽略符号链接错误问题，报错又忽略？
     if (e.code === ERR_SYMLINK_IN_RECURSIVE_READDIR) {
       return
     }
+
     throw e
   }
+
+  //// 保留去重的相对路径
   const publicFiles = new Set(
     fileNames.map((fileName) => fileName.slice(config.publicDir.length)),
   )
+
+  //// 缓存publicFiles
   publicFilesMap.set(config, publicFiles)
+
   return publicFiles
 }
 
+//// 获取publicFiles
 function getPublicFiles(config: ResolvedConfig): Set<string> | undefined {
   return publicFilesMap.get(config)
 }

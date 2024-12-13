@@ -95,16 +95,21 @@ export async function resolveHttpServer(
   app: Connect.Server,
   httpsOptions?: HttpsServerOptions,
 ): Promise<HttpServer> {
+  //// 默认使用http.createServer创建服务器
   if (!httpsOptions) {
     const { createServer } = await import('node:http')
+
     return createServer(app)
   }
 
   // #484 fallback to http1 when proxy is needed.
   if (proxy) {
+    //// 有代理时使用https.createServer创建服务器
     const { createServer } = await import('node:https')
+
     return createServer(httpsOptions, app)
   } else {
+    //// 其他情况使用http2.createSecureServer创建服务器
     const { createSecureServer } = await import('node:http2')
     return createSecureServer(
       {

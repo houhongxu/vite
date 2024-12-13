@@ -419,6 +419,7 @@ export interface ResolvedServerUrls {
   network: string[]
 }
 
+//// 套一层默认参数
 export function createServer(
   inlineConfig: InlineConfig = {},
 ): Promise<ViteDevServer> {
@@ -432,24 +433,36 @@ export async function _createServer(
     previousEnvironments?: Record<string, DevEnvironment>
   },
 ): Promise<ViteDevServer> {
+  //// 解析并处理配置文件
   const config = await resolveConfig(inlineConfig, 'serve')
 
+  //// 处理并缓存publicFiles的函数
   const initPublicFilesPromise = initPublicFiles(config)
 
+  //// root和server
   const { root, server: serverConfig } = config
+
+  //// server.https https.createServer() 的 选项对象
   const httpsOptions = await resolveHttpsConfig(config.server.https)
+
+  //// server.middlewareMode 默认false，true则将vite服务返回为中间件
   const { middlewareMode } = serverConfig
 
+  //// 解析outDir，包括优先级
   const resolvedOutDirs = getResolvedOutDirs(
     config.root,
     config.build.outDir,
     config.build.rollupOptions?.output,
   )
+
+  //// emptyOutDir添加一个警告，emptyOutDir就是clean产物的功能
   const emptyOutDir = resolveEmptyOutDir(
     config.build.emptyOutDir,
     config.root,
     resolvedOutDirs,
   )
+
+  //// 解析chokidar库配置
   const resolvedWatchOptions = resolveChokidarOptions(
     {
       disableGlobbing: true,
@@ -460,22 +473,31 @@ export async function _createServer(
     config.cacheDir,
   )
 
+  //// 使用connect库中间件创建中间件
   const middlewares = connect() as Connect.Server
+
+  //// middlewareMode开启则代表vite作为中间件，关闭则使用vite启动的http服务器
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
 
+  //// TODO websocket服务器
   const ws = createWebSocketServer(httpServer, config, httpsOptions)
 
+  //// public文件夹内文件路径
   const publicFiles = await initPublicFilesPromise
+
   const { publicDir } = config
 
+  //// 监听错误信息并处理
   if (httpServer) {
     setClientErrorHandler(httpServer, config.logger)
   }
 
   // eslint-disable-next-line eqeqeq
   const watchEnabled = serverConfig.watch !== null
+
+  //// chokidar库监听文件变动
   const watcher = watchEnabled
     ? (chokidar.watch(
         // config file dependencies and env file might be outside of root
@@ -490,13 +512,17 @@ export async function _createServer(
 
         resolvedWatchOptions,
       ) as FSWatcher)
-    : createNoopWatcher(resolvedWatchOptions)
+    : //// 新建一个空的函数watcher
+      createNoopWatcher(resolvedWatchOptions)
 
+  //// vite6的环境，client始终存在，ssr配置将被替代
+  //// 目前的兼容方案在resolveConifg中将client和ssr默认内置在environments中
   const environments: Record<string, DevEnvironment> = {}
 
   for (const [name, environmentOptions] of Object.entries(
     config.environments,
   )) {
+    //// 给每个环境创建DevEnvironment实例，createEnvironment在resolveConifg中初始化了
     environments[name] = await environmentOptions.dev.createEnvironment(
       name,
       config,
@@ -507,16 +533,23 @@ export async function _createServer(
   }
 
   for (const environment of Object.values(environments)) {
+    //// 上一个环境
     const previousInstance = options.previousEnvironments?.[environment.name]
+
+    //// 初始化每个环境
     await environment.init({ watcher, previousInstance })
   }
 
+  //// Backward compatibility 也叫 Downward compatibility ，更应该译为向下兼容
   // Backward compatibility
 
+  //// 模块依赖图
   let moduleGraph = new ModuleGraph({
     client: () => environments.client.moduleGraph,
     ssr: () => environments.ssr.moduleGraph,
   })
+
+  //// 插件容器
   const pluginContainer = createPluginContainer(environments)
 
   const closeHttpServer = createServerCloseFn(httpServer)

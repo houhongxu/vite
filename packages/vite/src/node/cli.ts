@@ -37,10 +37,11 @@ interface BuilderCLIOptions {
   app?: boolean
 }
 
-//// 停止性能分析
+//// 性能分析标记
 let profileSession = global.__vite_profile_session
 let profileCount = 0
 
+//// 停止性能分析
 export const stopProfiler = (
   log: (message: string) => void,
 ): void | Promise<void> => {
@@ -67,6 +68,7 @@ export const stopProfiler = (
   })
 }
 
+//// 配置去重取数组最后一位
 const filterDuplicateOptions = <T extends object>(options: T) => {
   for (const [key, value] of Object.entries(options)) {
     if (Array.isArray(value)) {
@@ -74,6 +76,8 @@ const filterDuplicateOptions = <T extends object>(options: T) => {
     }
   }
 }
+
+//// 去除全局cli的参数留下server的
 /**
  * removing global flags before passing as command specific sub-configs
  */
@@ -174,8 +178,12 @@ cli
     filterDuplicateOptions(options)
     // output structure is preserved even after bundling so require()
     // is ok here
+
+    //// 导入启动服务函数
     const { createServer } = await import('./server')
+
     try {
+      //// 启动服务
       const server = await createServer({
         root,
         base: options.base,
@@ -193,6 +201,7 @@ cli
 
       await server.listen()
 
+      //// 日志打印
       const info = server.config.logger.info
 
       const viteStartTime = global.__vite_start_time ?? false
@@ -216,6 +225,8 @@ cli
       )
 
       server.printUrls()
+
+      //// 性能分析快捷键
       const customShortcuts: CLIShortcut<typeof server>[] = []
       if (profileSession) {
         customShortcuts.push({

@@ -423,10 +423,13 @@ export function isFilePathESM(
   packageCache?: PackageCache,
 ): boolean {
   if (/\.m[jt]s$/.test(filePath)) {
+    //// .mjs .mts
     return true
   } else if (/\.c[jt]s$/.test(filePath)) {
+    //// .cjs .cts
     return false
   } else {
+    //// 检查 package.json
     // check package.json for type: "module"
     try {
       const pkg = findNearestPackageData(path.dirname(filePath), packageCache)
@@ -608,22 +611,30 @@ export function copyDir(srcDir: string, destDir: string): void {
   }
 }
 
+//// 符号链接错误code
 export const ERR_SYMLINK_IN_RECURSIVE_READDIR =
   'ERR_SYMLINK_IN_RECURSIVE_READDIR'
+
 export async function recursiveReaddir(dir: string): Promise<string[]> {
   if (!fs.existsSync(dir)) {
     return []
   }
+
+  //// Dirent对象数组
   let dirents: fs.Dirent[]
+
   try {
     dirents = await fsp.readdir(dir, { withFileTypes: true })
   } catch (e) {
     if (e.code === 'EACCES') {
+      //// 忽略权限报错
       // Ignore permission errors
       return []
     }
     throw e
   }
+
+  //// 不支持符号链接
   if (dirents.some((dirent) => dirent.isSymbolicLink())) {
     const err: any = new Error(
       'Symbolic links are not supported in recursiveReaddir',
@@ -631,12 +642,18 @@ export async function recursiveReaddir(dir: string): Promise<string[]> {
     err.code = ERR_SYMLINK_IN_RECURSIVE_READDIR
     throw err
   }
+
   const files = await Promise.all(
     dirents.map((dirent) => {
+      //// 文件路径
       const res = path.resolve(dir, dirent.name)
+
+      //// 文件夹递归读取
       return dirent.isDirectory() ? recursiveReaddir(res) : normalizePath(res)
     }),
   )
+
+  //// 平铺路径
   return files.flat(1)
 }
 
@@ -1010,6 +1027,7 @@ export async function resolveServerUrls(
   return { local, network }
 }
 
+//// 确保是数组
 export function arraify<T>(target: T | T[]): T[] {
   return Array.isArray(target) ? target : [target]
 }
@@ -1307,6 +1325,7 @@ export function transformStableResult(
   }
 }
 
+//// 包含异步的扁平化数组
 export async function asyncFlatten<T>(arr: T[]): Promise<T[]> {
   do {
     arr = (await Promise.all(arr)).flat(Infinity) as any
