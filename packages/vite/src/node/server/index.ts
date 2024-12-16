@@ -416,8 +416,10 @@ export async function _createServer(
 
   let exitProcess: () => void
 
+  //// dev html转换函数
   const devHtmlTransformFn = createDevHtmlTransformFn(config)
 
+  //// 返回的server对象
   let server: ViteDevServer = {
     config,
     middlewares,
@@ -426,6 +428,7 @@ export async function _createServer(
     pluginContainer: container,
     ws,
     moduleGraph,
+    //// listen时赋值
     resolvedUrls: null, // will be set on listen
     ssrTransform(
       code: string,
@@ -436,9 +439,11 @@ export async function _createServer(
       return ssrTransform(code, inMap, url, originalCode, server.config)
     },
     transformRequest(url, options) {
+      //// 转换请求
       return transformRequest(url, server, options)
     },
     async warmupRequest(url, options) {
+      //// 预热文件请求转换
       await transformRequest(url, server, options).catch((e) => {
         if (
           e?.code === ERR_OUTDATED_OPTIMIZED_DEP ||
@@ -455,6 +460,7 @@ export async function _createServer(
       })
     },
     transformIndexHtml(url, html, originalUrl) {
+      //// 转换html
       return devHtmlTransformFn(server, url, html, originalUrl)
     },
     async ssrLoadModule(url, opts?: { fixStacktrace?: boolean }) {
@@ -481,18 +487,23 @@ export async function _createServer(
       }
     },
     async listen(port?: number, isRestart?: boolean) {
+      //// 开启服务
       await startServer(server, port)
+
       if (httpServer) {
+        //// 解析服务的url并保存
         server.resolvedUrls = await resolveServerUrls(
           httpServer,
           config.server,
           config,
         )
+
         if (!isRestart && config.server.open) server.openBrowser()
       }
       return server
     },
     openBrowser() {
+      //// 打开浏览器
       const options = server.config.server
       const url =
         server.resolvedUrls?.local[0] ?? server.resolvedUrls?.network[0]
@@ -538,6 +549,7 @@ export async function _createServer(
       }
     },
     async close() {
+      //// 关闭服务器
       if (!middlewareMode) {
         process.off('SIGTERM', exitProcess)
         if (process.env.CI !== 'true') {
@@ -568,6 +580,7 @@ export async function _createServer(
       server.resolvedUrls = null
     },
     printUrls() {
+      //// 打印服务的url
       if (server.resolvedUrls) {
         printServerUrls(
           server.resolvedUrls,
@@ -583,6 +596,7 @@ export async function _createServer(
       }
     },
     bindCLIShortcuts(options) {
+      //// 绑定快捷键
       bindCLIShortcuts(server, options)
     },
     async restart(forceOptimize?: boolean) {
@@ -609,6 +623,7 @@ export async function _createServer(
     _shortcutsOptions: undefined,
   }
 
+  //// 非中间件模式时监听关闭信号
   if (!middlewareMode) {
     exitProcess = async () => {
       try {
@@ -623,6 +638,7 @@ export async function _createServer(
     }
   }
 
+  //// TODO hmr处理
   const onHMRUpdate = async (file: string, configOnly: boolean) => {
     if (serverConfig.hmr !== false) {
       try {
@@ -682,25 +698,30 @@ export async function _createServer(
     })
   }
 
+  //// 串行收集configureServer hook，configureServer 钩子将在内部中间件被安装前调用，configureServer 返回一个函数，将会在内部中间件安装后被调用
   // apply server configuration hooks from plugins
   const postHooks: ((() => void) | void)[] = []
   for (const hook of config.getSortedPluginHooks('configureServer')) {
     postHooks.push(await hook(server))
   }
 
+  //// 内部中间件
   // Internal middlewares ------------------------------------------------------
 
+  //// 请求时间打印中间件
   // request timer
   if (process.env.DEBUG) {
     middlewares.use(timeMiddleware(root))
   }
 
+  //// 跨域中间件
   // cors (enabled by default)
   const { cors } = serverConfig
   if (cors !== false) {
     middlewares.use(corsMiddleware(typeof cors === 'boolean' ? {} : cors))
   }
 
+  //// 代理中间件
   // proxy
   const { proxy } = serverConfig
   if (proxy) {
@@ -711,14 +732,17 @@ export async function _createServer(
     middlewares.use(proxyMiddleware(middlewareServer, proxy, config))
   }
 
+  //// base处理中间件
   // base
   if (config.base !== '/') {
     middlewares.use(baseMiddleware(config.rawBase, middlewareMode))
   }
 
+  //// 在编辑器打开代码的中间件
   // open in editor support
   middlewares.use('/__open-in-editor', launchEditorMiddleware())
 
+  //// ping检查保持连接中间件
   // ping request handler
   // Keep the named function. The name is visible in debug logs via `DEBUG=connect:dispatcher ...`
   middlewares.use(function viteHMRPingMiddleware(req, res, next) {
@@ -729,6 +753,7 @@ export async function _createServer(
     }
   })
 
+  //// public文件夹资源服务中间件
   // serve static files under /public
   // this applies before the transform middleware so that these files are served
   // as-is without transforms.
@@ -736,91 +761,137 @@ export async function _createServer(
     middlewares.use(servePublicMiddleware(server))
   }
 
+  //// transform中间件
   // main transform middleware
   middlewares.use(transformMiddleware(server))
 
   // serve static files
+  //// 原始资源服务中间件
   middlewares.use(serveRawFsMiddleware(server))
+  //// 静态资源服务中间件
   middlewares.use(serveStaticMiddleware(server))
 
+  //// html fallback 中间件
   // html fallback
   if (config.appType === 'spa' || config.appType === 'mpa') {
     middlewares.use(htmlFallbackMiddleware(root, config.appType === 'spa'))
   }
 
+  //// 在内部中间件安装后，调用configureServer 返回的函数
   // run post config hooks
   // This is applied before the html middleware so that user middleware can
   // serve custom content instead of index.html.
   postHooks.forEach((fn) => fn && fn())
 
   if (config.appType === 'spa' || config.appType === 'mpa') {
+    //// transform index的中间件
     // transform index.html
     middlewares.use(indexHtmlMiddleware(root, server))
 
+    //// 处理404的中间件
     // handle 404s
     middlewares.use(notFoundMiddleware())
   }
 
+  //// 错误处理中间件
   // error handler
   middlewares.use(errorMiddleware(server, middlewareMode))
 
+  //// httpServer.listen可以多次调用，但是避免buildStart多次调用
   // httpServer.listen can be called multiple times
   // when port when using next port number
   // this code is to avoid calling buildStart multiple times
+  //// 在初始化的服务器
   let initingServer: Promise<void> | undefined
+
+  //// 是否初始化过
   let serverInited = false
+
   const initServer = async () => {
+    //// 初始化过就返回
     if (serverInited) return
+
+    //// 初始化中则返回在初始化的服务器
     if (initingServer) return initingServer
 
+    //// 服务器初始化函数
     initingServer = (async function () {
+      //// 执行buildStart hook
       await container.buildStart({})
+
+      //// ! 执行预构建
       // start deps optimizer after all container plugins are ready
       if (isDepsOptimizerEnabled(config, false)) {
         await initDepsOptimizer(config, server)
       }
+
+      //// 预热常用文件
       warmupFiles(server)
+
+      //// 在初始化的服务器清空
       initingServer = undefined
+
+      //// 已经初始化过
       serverInited = true
     })()
+
     return initingServer
   }
 
   if (!middlewareMode && httpServer) {
+    //// 不是中间件模式时，重写listen来支持预构建
     // overwrite listen to init optimizer before server start
     const listen = httpServer.listen.bind(httpServer)
+
     httpServer.listen = (async (port: number, ...args: any[]) => {
       try {
+        //// 先启动ws服务器
         // ensure ws server started
         ws.listen()
+
+        //// 执行服务器初始化
         await initServer()
       } catch (e) {
         httpServer.emit('error', e)
+
         return
       }
+
       return listen(port, ...args)
     }) as any
   } else {
+    //// 是中间件模式时，直接启动ws服务器
     if (options.ws) {
       ws.listen()
     }
+
+    //// 然后初始化服务器
     await initServer()
   }
 
+  //// 返回服务器对象
   return server
 }
 
+//// 开启服务器
 async function startServer(
   server: ViteDevServer,
   inlinePort?: number,
 ): Promise<void> {
+  //// 获取httpServer
   const httpServer = server.httpServer
+
   if (!httpServer) {
     throw new Error('Cannot call server.listen in middleware mode.')
   }
 
+  //// 获取server配置
   const options = server.config.server
+
+  //// 解析host
   const hostname = await resolveHostname(options.host)
+
+  //// 解析port
   const configPort = inlinePort ?? options.port
   // When using non strict port for the dev server, the running port can be different from the config one.
   // When restarting, the original port may be available but to avoid a switch of URL for the running
@@ -831,6 +902,7 @@ async function startServer(
       : configPort) ?? DEFAULT_DEV_PORT
   server._configServerPort = configPort
 
+  //// 开启服务器
   const serverPort = await httpServerStart(httpServer, {
     port,
     strictPort: options.strictPort,
@@ -840,29 +912,40 @@ async function startServer(
   server._currentServerPort = serverPort
 }
 
+//// 创建关闭服务器的函数
 function createServerCloseFn(server: HttpServer | null) {
   if (!server) {
     return () => {}
   }
 
+  //// 服务是否开启
   let hasListened = false
+
+  //// 记录下的开启的socket
   const openSockets = new Set<net.Socket>()
 
   server.on('connection', (socket) => {
+    //// 每次socket连接都记录下来
     openSockets.add(socket)
+
     socket.on('close', () => {
+      //// 每次socket关闭都删除记录
       openSockets.delete(socket)
     })
   })
 
   server.once('listening', () => {
+    //// 服务开启时记录开启
     hasListened = true
   })
 
   return () =>
     new Promise<void>((resolve, reject) => {
+      //// 关闭每一个socket
       openSockets.forEach((s) => s.destroy())
+
       if (hasListened) {
+        //// 如果还在监听，关闭服务器这样避免新的socket
         server.close((err) => {
           if (err) {
             reject(err)
@@ -876,10 +959,12 @@ function createServerCloseFn(server: HttpServer | null) {
     })
 }
 
+//// 解析allow的目录路径
 function resolvedAllowDir(root: string, dir: string): string {
   return normalizePath(path.resolve(root, dir))
 }
 
+//// 解析server配置
 export function resolveServerOptions(
   root: string,
   raw: ServerOptions | undefined,
@@ -929,6 +1014,7 @@ export function resolveServerOptions(
   return server
 }
 
+//// 重启服务器
 async function restartServer(server: ViteDevServer) {
   global.__vite_start_time = performance.now()
   const shortcutsOptions = server._shortcutsOptions
@@ -980,6 +1066,7 @@ async function restartServer(server: ViteDevServer) {
   }
 }
 
+//// 重启服务器并打印urls
 /**
  * Internal function to restart the Vite server and print URLs if changed
  */

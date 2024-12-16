@@ -65,10 +65,12 @@ export function createDevHtmlTransformFn(
   html: string,
   originalUrl?: string,
 ) => Promise<string> {
+  //// 获取html相关的hook
   const [preHooks, normalHooks, postHooks] = resolveHtmlTransforms(
     config.plugins,
     config.logger,
   )
+
   return (
     server: ViteDevServer,
     url: string,
@@ -78,12 +80,16 @@ export function createDevHtmlTransformFn(
     return applyHtmlTransforms(
       html,
       [
+        //// 内部在 HTML 中先处理importmap的钩子
         preImportMapHook(config),
         ...preHooks,
+        //// 内部在 HTML 中处理env变量的钩子，涉及config.env、config.envPrefix和config.define
         htmlEnvHook(config),
+        //// dev时的内部代码注入到html
         devHtmlHook,
         ...normalHooks,
         ...postHooks,
+        //// 内部在 HTML 中后处理importmap的钩子
         postImportMapHook(),
       ],
       {

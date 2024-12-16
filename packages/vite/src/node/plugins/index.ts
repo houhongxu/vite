@@ -108,21 +108,35 @@ export async function resolvePlugins(
 export function createPluginHookUtils(
   plugins: readonly Plugin[],
 ): PluginHookUtils {
+  //// 排序后的插件缓存
   // sort plugins per hook
   const sortedPluginsCache = new Map<keyof Plugin, Plugin[]>()
+
+  //// 获取根据某个hook排序后的插件
   function getSortedPlugins<K extends keyof Plugin>(
     hookName: K,
   ): PluginWithRequiredHook<K>[] {
+    //// 缓存了则直接拿
     if (sortedPluginsCache.has(hookName))
       return sortedPluginsCache.get(hookName) as PluginWithRequiredHook<K>[]
+
+    //// 获取根据某个hook排序后的插件
     const sorted = getSortedPluginsByHook(hookName, plugins)
+
+    //// 添加缓存
     sortedPluginsCache.set(hookName, sorted)
+
     return sorted
   }
+
+  //// 获取根据某个hook排序后的插件的函数
   function getSortedPluginHooks<K extends keyof Plugin>(
     hookName: K,
   ): NonNullable<HookHandler<Plugin[K]>>[] {
+    //// 获取根据某个hook排序后的插件
     const plugins = getSortedPlugins(hookName)
+
+    //// 获取函数
     return plugins.map((p) => getHookHandler(p[hookName])).filter(Boolean)
   }
 
@@ -132,6 +146,7 @@ export function createPluginHookUtils(
   }
 }
 
+//// 获取根据某个hook排序后的插件
 export function getSortedPluginsByHook<K extends keyof Plugin>(
   hookName: K,
   plugins: readonly Plugin[],
@@ -139,8 +154,13 @@ export function getSortedPluginsByHook<K extends keyof Plugin>(
   const pre: Plugin[] = []
   const normal: Plugin[] = []
   const post: Plugin[] = []
+
+  //// 遍历插件
   for (const plugin of plugins) {
+    //// 获取hook
     const hook = plugin[hookName]
+
+    //// 根据hook.order push
     if (hook) {
       if (typeof hook === 'object') {
         if (hook.order === 'pre') {

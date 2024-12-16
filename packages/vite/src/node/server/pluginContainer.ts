@@ -150,6 +150,7 @@ type PluginContext = Omit<
   'cache'
 >
 
+//// 创建插件容器
 export async function createPluginContainer(
   config: ResolvedConfig,
   moduleGraph?: ModuleGraph,
@@ -161,19 +162,26 @@ export async function createPluginContainer(
     root,
     build: { rollupOptions },
   } = config
+
+  //// 获取排序插件的函数
   const { getSortedPluginHooks, getSortedPlugins } =
     createPluginHookUtils(plugins)
 
   const seenResolves: Record<string, true | undefined> = {}
+
   const debugResolve = createDebugger('vite:resolve')
+
   const debugPluginResolve = createDebugger('vite:plugin-resolve', {
     onlyWhenFocused: 'vite:plugin',
   })
+
   const debugPluginTransform = createDebugger('vite:plugin-transform', {
     onlyWhenFocused: 'vite:plugin',
   })
+
   const debugSourcemapCombineFilter =
     process.env.DEBUG_VITE_SOURCEMAP_COMBINE_FILTER
+
   const debugSourcemapCombine = createDebugger('vite:sourcemap-combine', {
     onlyWhenFocused: true,
   })
@@ -181,6 +189,8 @@ export async function createPluginContainer(
   // ---------------------------------------------------------------------------
 
   const watchFiles = new Set<string>()
+
+  //// 收集 load hook加载的的module
   // _addedFiles from the `load()` hook gets saved here so it can be reused in the `transform()` hook
   const moduleNodeToLoadAddedImports = new WeakMap<
     ModuleNode,
@@ -210,30 +220,47 @@ export async function createPluginContainer(
     )
   }
 
+  //// 并发执行hook
   // parallel, ignores returns
   async function hookParallel<H extends AsyncPluginHooks & ParallelPluginHooks>(
     hookName: H,
     context: (plugin: Plugin) => ThisType<FunctionPluginHooks[H]>,
     args: (plugin: Plugin) => Parameters<FunctionPluginHooks[H]>,
   ): Promise<void> {
+    //// 收集的promise
     const parallelPromises: Promise<unknown>[] = []
+
+    //// 遍历plugin
     for (const plugin of getSortedPlugins(hookName)) {
+      //// 获取hook
       // Don't throw here if closed, so buildEnd and closeBundle hooks can finish running
       const hook = plugin[hookName]
+
       if (!hook) continue
 
+      //// 获取hook函数
       const handler: Function = getHookHandler(hook)
+
       if ((hook as { sequential?: boolean }).sequential) {
+        //// 如果是串行的，并发执行之前收集的hook
         await Promise.all(parallelPromises)
+
+        //// 清除收集的hook
         parallelPromises.length = 0
+
+        //// 执行hook
         await handler.apply(context(plugin), args(plugin))
       } else {
+        //// 如果不是串行的，收集这个hook
         parallelPromises.push(handler.apply(context(plugin), args(plugin)))
       }
     }
+
+    //// 执行所有并行的hook
     await Promise.all(parallelPromises)
   }
 
+  //// 模块属性代理，禁止不支持的属性
   // throw when an unsupported ModuleInfo property is accessed,
   // so that incompatible plugins fail in a non-cryptic way.
   const ModuleInfoProxy: ProxyHandler<ModuleInfo> = {
@@ -251,39 +278,54 @@ export async function createPluginContainer(
     },
   }
 
+  //// module.meta的默认值
   // same default value of "moduleInfo.meta" as in Rollup
   const EMPTY_OBJECT = Object.freeze({})
 
+  //// 获取module.info
   function getModuleInfo(id: string) {
+    //// 获取module
     const module = moduleGraph?.getModuleById(id)
+
     if (!module) {
       return null
     }
+
+    //// 没有module.info时新建代理
     if (!module.info) {
       module.info = new Proxy(
         { id, meta: module.meta || EMPTY_OBJECT } as ModuleInfo,
         ModuleInfoProxy,
       )
     }
+
     return module.info
   }
 
+  //// 更新module.info
   function updateModuleInfo(id: string, { meta }: { meta?: object | null }) {
     if (meta) {
+      //// 获取获取module.info
       const moduleInfo = getModuleInfo(id)
+
       if (moduleInfo) {
         moduleInfo.meta = { ...moduleInfo.meta, ...meta }
       }
     }
   }
 
+  //// 收集加载的module
   function updateModuleLoadAddedImports(id: string, ctx: Context) {
+    //// 获取module
     const module = moduleGraph?.getModuleById(id)
+
     if (module) {
+      //// 收集
       moduleNodeToLoadAddedImports.set(module, ctx._addedImports)
     }
   }
 
+  //// 插件上下文类
   // we should create a new context for each async hook pipeline so that the
   // active plugin in that pipeline can be tracked in a concurrency-safe manner.
   // using a class to make creating new contexts more efficient
@@ -423,6 +465,7 @@ export async function createPluginContainer(
     info = noop
   }
 
+  //// 格式化错误信息
   function formatError(
     e: string | RollupError,
     position: number | { column: number; line: number } | undefined,
@@ -525,6 +568,7 @@ export async function createPluginContainer(
     return err
   }
 
+  //// transform hook的上下文
   class TransformContext extends Context {
     filename: string
     originalCode: string
@@ -614,34 +658,54 @@ export async function createPluginContainer(
     }
   }
 
+  //// 是否关闭了服务器
   let closed = false
+
+  //// 处理中的promise缓存
   const processesing = new Set<Promise<any>>()
+
+  //// 处理所有未完成的hook promise
   // keeps track of hook promises so that we can wait for them all to finish upon closing the server
   function handleHookPromise<T>(maybePromise: undefined | T | Promise<T>) {
     if (!(maybePromise as any)?.then) {
       return maybePromise
     }
+
     const promise = maybePromise as Promise<T>
+
+    //// 缓存处理中的promise
     processesing.add(promise)
+
+    //// 执行完成后从缓存删除
     return promise.finally(() => processesing.delete(promise))
   }
 
+  //// 插件的container
   const container: PluginContainer = {
     options: await (async () => {
+      //// 获取rollupOptions
       let options = rollupOptions
+
+      //// container是串行hook
       for (const optionsHook of getSortedPluginHooks('options')) {
+        //// 如果已经关闭服务器了就报错
         if (closed) throwClosedServerError()
+
+        //// 执行options hook获取options
         options =
           (await handleHookPromise(
             optionsHook.call(minimalContext, options),
           )) || options
       }
+
       return options
     })(),
 
+    //// 获取module.info
     getModuleInfo,
 
     async buildStart() {
+      //// buildStart是并发hook
       await handleHookPromise(
         hookParallel(
           'buildStart',
@@ -651,6 +715,7 @@ export async function createPluginContainer(
       )
     },
 
+    //// 解析模块id
     async resolveId(rawId, importer = join(root, 'index.html'), options) {
       const skip = options?.skip
       const ssr = options?.ssr
@@ -662,6 +727,8 @@ export async function createPluginContainer(
       const resolveStart = debugResolve ? performance.now() : 0
       let id: string | null = null
       const partial: Partial<PartialResolvedId> = {}
+
+      //// resolveId是串行hook
       for (const plugin of getSortedPlugins('resolveId')) {
         if (closed && !ssr) throwClosedServerError()
         if (!plugin.resolveId) continue
@@ -720,10 +787,13 @@ export async function createPluginContainer(
       }
     },
 
+    //// 加载模块
     async load(id, options) {
       const ssr = options?.ssr
       const ctx = new Context()
       ctx.ssr = !!ssr
+
+      //// load是串行hook
       for (const plugin of getSortedPlugins('load')) {
         if (closed && !ssr) throwClosedServerError()
         if (!plugin.load) continue
@@ -744,11 +814,14 @@ export async function createPluginContainer(
       return null
     },
 
+    //// 转换模块
     async transform(code, id, options) {
       const inMap = options?.inMap
       const ssr = options?.ssr
       const ctx = new TransformContext(id, code, inMap as SourceMap)
       ctx.ssr = !!ssr
+
+      //// transform是串行hook
       for (const plugin of getSortedPlugins('transform')) {
         if (closed && !ssr) throwClosedServerError()
         if (!plugin.transform) continue
@@ -793,6 +866,7 @@ export async function createPluginContainer(
       }
     },
 
+    //// 监听文件变化
     async watchChange(id, change) {
       const ctx = new Context()
       await hookParallel(
@@ -802,6 +876,7 @@ export async function createPluginContainer(
       )
     },
 
+    //// 关闭
     async close() {
       if (closed) return
       closed = true

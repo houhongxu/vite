@@ -1092,6 +1092,7 @@ export function htmlEnvHook(config: ResolvedConfig): IndexHtmlTransformHook {
   }
 }
 
+//// 解析html相关的hook
 export function resolveHtmlTransforms(
   plugins: readonly Plugin[],
   logger: Logger,
@@ -1105,12 +1106,15 @@ export function resolveHtmlTransforms(
   const postHooks: IndexHtmlTransformHook[] = []
 
   for (const plugin of plugins) {
+    //// 获取transformIndexHtml hook
     const hook = plugin.transformIndexHtml
+
     if (!hook) continue
 
     if (typeof hook === 'function') {
       normalHooks.push(hook)
     } else {
+      //// hook不是函数时处理顺序
       if (!('order' in hook) && 'enforce' in hook) {
         logger.warnOnce(
           colors.yellow(
@@ -1126,13 +1130,18 @@ export function resolveHtmlTransforms(
         )
       }
 
+      //// 获取这个hook的顺序，默认情况下 order 是 undefined，这个钩子会在 HTML 被转换后应用
       // `enforce` had only two possible values for the `transformIndexHtml` hook
       // `'pre'` and `'post'` (the default). `order` now works with three values
       // to align with other hooks (`'pre'`, normal, and `'post'`). We map
       // both `enforce: 'post'` to `order: undefined` to avoid a breaking change
       const order = hook.order ?? (hook.enforce === 'pre' ? 'pre' : undefined)
+
+      //// 获取hook函数
       // @ts-expect-error union type
       const handler = hook.handler ?? hook.transform
+
+      //// 按顺序push
       if (order === 'pre') {
         preHooks.push(handler)
       } else if (order === 'post') {
@@ -1146,20 +1155,29 @@ export function resolveHtmlTransforms(
   return [preHooks, normalHooks, postHooks]
 }
 
+//// 转换html
 export async function applyHtmlTransforms(
   html: string,
   hooks: IndexHtmlTransformHook[],
   ctx: IndexHtmlTransformContext,
 ): Promise<string> {
+  //// 处理每个hook
   for (const hook of hooks) {
+    //// 执行hook
     const res = await hook(html, ctx)
+
     if (!res) {
       continue
     }
+
+    //// hook返回string则就是html
     if (typeof res === 'string') {
       html = res
     } else {
+      //// 否则可能返回了tags和html,tags是注入到现有 HTML 中的标签描述符对象数组（{ tag, attrs, children }）。每个标签也可以指定它应该被注入到哪里（默认是在 <head> 之前）
+
       let tags: HtmlTagDescriptor[]
+
       if (Array.isArray(res)) {
         tags = res
       } else {
@@ -1167,6 +1185,7 @@ export async function applyHtmlTransforms(
         tags = res.tags
       }
 
+      //// 注入tags内容到html
       const headTags: HtmlTagDescriptor[] = []
       const headPrependTags: HtmlTagDescriptor[] = []
       const bodyTags: HtmlTagDescriptor[] = []
