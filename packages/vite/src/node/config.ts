@@ -1222,21 +1222,33 @@ async function runConfigHook(
   return conf
 }
 
+//// 获取optimizeDeps
 export function getDepOptimizationConfig(
   config: ResolvedConfig,
   ssr: boolean,
 ): DepOptimizationConfig {
   return ssr ? config.ssr.optimizeDeps : config.optimizeDeps
 }
+
+//// 是否开启预构建
 export function isDepsOptimizerEnabled(
   config: ResolvedConfig,
   ssr: boolean,
 ): boolean {
+  //// 获取command
   const { command } = config
+
+  //// 获取optimizeDeps内的disabled
   const { disabled } = getDepOptimizationConfig(config, ssr)
+
   return !(
-    disabled === true ||
-    (command === 'build' && disabled === 'build') ||
-    (command === 'serve' && disabled === 'dev')
+    //// disabled时关闭预构建
+    (
+      disabled === true ||
+      //// build时且disabled时关闭预构建
+      (command === 'build' && disabled === 'build') ||
+      //// serve时且disabled时关闭预构建
+      (command === 'serve' && disabled === 'dev')
+    )
   )
 }

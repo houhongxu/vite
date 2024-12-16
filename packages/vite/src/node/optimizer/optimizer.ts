@@ -34,15 +34,21 @@ const debug = createDebugger('vite:deps')
  */
 const debounceMs = 100
 
+//// 预构建缓存
 const depsOptimizerMap = new WeakMap<ResolvedConfig, DepsOptimizer>()
+
+//// devSsr预构建缓存
 const devSsrDepsOptimizerMap = new WeakMap<ResolvedConfig, DepsOptimizer>()
 
 export function getDepsOptimizer(
   config: ResolvedConfig,
   ssr?: boolean,
 ): DepsOptimizer | undefined {
+  //// ssr和dev使用devSsr预构建缓存
   // Workers compilation shares the DepsOptimizer from the main build
   const isDevSsr = ssr && config.command !== 'build'
+
+  //// 用每个config作为key
   return (isDevSsr ? devSsrDepsOptimizerMap : depsOptimizerMap).get(
     config.mainConfig || config,
   )
@@ -52,9 +58,13 @@ export async function initDepsOptimizer(
   config: ResolvedConfig,
   server?: ViteDevServer,
 ): Promise<void> {
+  //// dev ssr无预构建
   // Non Dev SSR Optimizer
   const ssr = config.command === 'build' && !!config.build.ssr
+
+  //// 没有预构建时
   if (!getDepsOptimizer(config, ssr)) {
+    /// 插件预构建
     await createDepsOptimizer(config, server)
   }
 }
@@ -87,6 +97,7 @@ export async function initDevSsrDepsOptimizer(
   return await creatingDevSsrOptimizer
 }
 
+//// TODO 创建预构建
 async function createDepsOptimizer(
   config: ResolvedConfig,
   server?: ViteDevServer,

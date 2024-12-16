@@ -465,8 +465,14 @@ export async function build(
     'production',
     'production',
   )
+
+  //// vite build 配置
   const options = config.build
+
+  //// 是否ssr
   const ssr = !!options.ssr
+
+  //// vite lib配置，以库的形式构建
   const libOptions = options.lib
 
   config.logger.info(
@@ -478,6 +484,8 @@ export async function build(
   )
 
   const resolve = (p: string) => path.resolve(config.root, p)
+
+  //// 获取入口，这嵌套太多了吧
   const input = libOptions
     ? options.rollupOptions?.input ||
       (typeof libOptions.entry === 'string'
@@ -494,12 +502,15 @@ export async function build(
       ? resolve(options.ssr)
       : options.rollupOptions?.input || resolve('index.html')
 
+  //// ssr入口错误处理
   if (ssr && typeof input === 'string' && input.endsWith('.html')) {
     throw new Error(
       `rollupOptions.input should not be an html file when building for SSR. ` +
         `Please specify a dedicated SSR entry.`,
     )
   }
+
+  //// css入口错误处理
   if (config.build.cssCodeSplit === false) {
     const inputs =
       typeof input === 'string'
@@ -507,6 +518,7 @@ export async function build(
         : Array.isArray(input)
           ? input
           : Object.values(input)
+
     if (inputs.some((input) => input.endsWith('.css'))) {
       throw new Error(
         `When "build.cssCodeSplit: false" is set, "rollupOptions.input" should not include CSS files.`,
@@ -521,10 +533,13 @@ export async function build(
     ssr ? config.plugins.map((p) => injectSsrFlagToHooks(p)) : config.plugins
   ) as Plugin[]
 
+  //// build在resolveConfig时默认{disabled:'build'}，所以默认不开启
   if (isDepsOptimizerEnabled(config, ssr)) {
+    //// 预构建
     await initDepsOptimizer(config)
   }
 
+  //// 获取rollupOptions
   const rollupOptions: RollupOptions = {
     preserveEntrySignatures: ssr
       ? 'allow-extension'
@@ -541,6 +556,7 @@ export async function build(
     },
   }
 
+  //// output错误处理
   const outputBuildError = (e: RollupError) => {
     let msg = colors.red((e.plugin ? `[${e.plugin}] ` : '') + e.message)
     if (e.id) {
@@ -555,8 +571,11 @@ export async function build(
     config.logger.error(msg, { error: e })
   }
 
+  //// rollup bundle
   let bundle: RollupBuild | undefined
+
   try {
+    //// 格式化output阶段配置
     const buildOutputOptions = (output: OutputOptions = {}): OutputOptions => {
       // @ts-expect-error See https://github.com/vitejs/vite/issues/5812#issuecomment-984345618
       if (output.output) {
@@ -632,12 +651,15 @@ export async function build(
       }
     }
 
+    //// 解析vite lib模式的output
     // resolve lib mode outputs
     const outputs = resolveBuildOutputs(
       options.rollupOptions?.output,
       libOptions,
       config.logger,
     )
+
+    //// 收集output配置
     const normalizedOutputs: OutputOptions[] = []
 
     if (Array.isArray(outputs)) {
@@ -648,18 +670,24 @@ export async function build(
       normalizedOutputs.push(buildOutputOptions(outputs))
     }
 
+    //// 补全dir为绝对路径
     const outDirs = normalizedOutputs.map(({ dir }) => resolve(dir!))
 
+    //// watch模式
     // watch file changes with rollup
     if (config.build.watch) {
       config.logger.info(colors.cyan(`\nwatching for file changes...`))
 
+      //// 解析chokidar库配置，rollup也用这个库
       const resolvedChokidarOptions = resolveChokidarOptions(
         config,
         config.build.watch.chokidar,
       )
 
+      //// 从rollup动态导入
       const { watch } = await import('rollup')
+
+      //// 启动监听器
       const watcher = watch({
         ...rollupOptions,
         output: normalizedOutputs,
@@ -669,6 +697,7 @@ export async function build(
         },
       })
 
+      //// 监听事件
       watcher.on('event', (event) => {
         if (event.code === 'BUNDLE_START') {
           config.logger.info(colors.cyan(`\nbuild started...`))
@@ -686,18 +715,27 @@ export async function build(
       return watcher
     }
 
+    //// 动态导入rollup
     // write or generate files with rollup
     const { rollup } = await import('rollup')
+
+    //// 获取rollup bundle
     bundle = await rollup(rollupOptions)
 
+    //// 如果写入文件，则准备output文件夹
     if (options.write) {
       prepareOutDir(outDirs, options.emptyOutDir, config)
     }
 
+    //// 产物数组
     const res: RollupOutput[] = []
+
+    //// 遍历output配置并bundle.write或者bundle.generate
     for (const output of normalizedOutputs) {
       res.push(await bundle[options.write ? 'write' : 'generate'](output))
     }
+
+    //// 返回产物数组
     return Array.isArray(outputs) ? res : res[0]
   } catch (e) {
     outputBuildError(e)
@@ -830,22 +868,32 @@ export function resolveBuildOutputs(
   libOptions: LibraryOptions | false,
   logger: Logger,
 ): OutputOptions | OutputOptions[] | undefined {
+  //// 有lib配置时，合并rollup outputs配置和vite lib配置
   if (libOptions) {
+    //// lib是否有多入口
     const libHasMultipleEntries =
       typeof libOptions.entry !== 'string' &&
       Object.values(libOptions.entry).length > 1
+
+    /// lib.format
     const libFormats =
       libOptions.formats ||
       (libHasMultipleEntries ? ['es', 'cjs'] : ['es', 'umd'])
 
+    //// ! 由此可见，使用lib时仅支持build.rollupOptions?.output不是数组时
+    //// 不是数组时，将output配置合并入libFormats
     if (!Array.isArray(outputs)) {
       if (libFormats.includes('umd') || libFormats.includes('iife')) {
+        //// 包括umd或者iife格式时
+
         if (libHasMultipleEntries) {
+          //// 多入口时
           throw new Error(
             'Multiple entry points are not supported when output formats include "umd" or "iife".',
           )
         }
 
+        //// 需要名称
         if (!libOptions.name) {
           throw new Error(
             'Option "build.lib.name" is required when output formats include "umd" or "iife".',
@@ -853,9 +901,11 @@ export function resolveBuildOutputs(
         }
       }
 
+      //// 返回每个format对应的output配置数组
       return libFormats.map((format) => ({ ...outputs, format }))
     }
 
+    //// 是数组时，format优先级降低
     // By this point, we know "outputs" is an Array.
     if (libOptions.formats) {
       logger.warn(
@@ -865,6 +915,7 @@ export function resolveBuildOutputs(
       )
     }
 
+    //// 也需要名称
     outputs.forEach((output) => {
       if (['umd', 'iife'].includes(output.format!) && !output.name) {
         throw new Error(
@@ -872,8 +923,11 @@ export function resolveBuildOutputs(
         )
       }
     })
+
+    //// 不额外处理
   }
 
+  //// 直接返回outputs数组
   return outputs
 }
 
