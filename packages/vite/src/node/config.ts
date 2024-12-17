@@ -404,18 +404,28 @@ export async function resolveConfig(
   defaultNodeEnv = 'development',
   isPreview = false,
 ): Promise<ResolvedConfig> {
+  //// inlineConfig是命令行配置，优先级更高
   let config = inlineConfig
+
+  //// 配置文件依赖
   let configFileDependencies: string[] = []
+
+  //// 默认模式为development
   let mode = inlineConfig.mode || defaultMode
+
   const isNodeEnvSet = !!process.env.NODE_ENV
+
+  //// 包缓存
   const packageCache: PackageCache = new Map()
 
+  //// 默认NODE_ENV为development
   // some dependencies e.g. @vue/compiler-* relies on NODE_ENV for getting
   // production-specific behavior, so set it early on
   if (!isNodeEnvSet) {
     process.env.NODE_ENV = defaultNodeEnv
   }
 
+  //// 环境相关的配置
   const configEnv: ConfigEnv = {
     mode,
     command,
@@ -423,7 +433,10 @@ export async function resolveConfig(
     isPreview,
   }
 
+  //// configFile指明要使用的配置文件
   let { configFile } = config
+
+  //// configFile不是false时读取配置
   if (configFile !== false) {
     const loadResult = await loadConfigFromFile(
       configEnv,
@@ -438,10 +451,12 @@ export async function resolveConfig(
     }
   }
 
+  //// 获取mode，默认情况下，开发服务器 (dev 命令) 运行在 development (开发) 模式，而 build 命令则运行在 production (生产) 模式
   // user config may provide an alternative mode. But --mode has a higher priority
   mode = inlineConfig.mode || config.mode || mode
   configEnv.mode = mode
 
+  //// 插件筛选当前command的
   const filterPlugin = (p: Plugin) => {
     if (!p) {
       return false
@@ -454,18 +469,23 @@ export async function resolveConfig(
     }
   }
 
+  //// 获取异步调用后的插件数组
   // resolve plugins
   const rawUserPlugins = (
     (await asyncFlatten(config.plugins || [])) as Plugin[]
   ).filter(filterPlugin)
 
+  //// 插件数组根据enforce排序
   const [prePlugins, normalPlugins, postPlugins] =
     sortUserPlugins(rawUserPlugins)
 
+  //// 执行插件config钩子，在解析 Vite 配置前调用
   // run config hooks
   const userPlugins = [...prePlugins, ...normalPlugins, ...postPlugins]
+
   config = await runConfigHook(config, userPlugins, configEnv)
 
+  //// 处理build.commonjsOptions默认值，传递给 @rollup/plugin-commonjs 插件的选项
   // If there are custom commonjsOptions, don't force optimized deps for this test
   // even if the env var is set as it would interfere with the playground specs.
   if (
@@ -480,16 +500,20 @@ export async function resolveConfig(
     config.build.commonjsOptions = { include: [] }
   }
 
+  //// 定义logger
   // Define logger
   const logger = createLogger(config.logLevel, {
     allowClearScreen: config.clearScreen,
     customLogger: config.customLogger,
   })
 
+  //// 解析root，项目根目录（index.html 文件所在的位置）
   // resolve root
   const resolvedRoot = normalizePath(
     config.root ? path.resolve(config.root) : process.cwd(),
   )
+
+  //// 非法路径警告
   if (resolvedRoot.includes('#')) {
     logger.warn(
       colors.yellow(
@@ -500,6 +524,7 @@ export async function resolveConfig(
     )
   }
 
+  //// 内部别名
   const clientAlias = [
     {
       find: /^\/?@vite\/env/,
@@ -511,20 +536,34 @@ export async function resolveConfig(
     },
   ]
 
+  //// 解析别名
   // resolve alias with internal client alias
   const resolvedAlias = normalizeAlias(
     mergeAlias(clientAlias, config.resolve?.alias || []),
   )
 
+  //// 解析resolve配置
   const resolveOptions: ResolvedConfig['resolve'] = {
+    //// package.json 中，在解析包的入口点时尝试的字段列表
     mainFields: config.resolve?.mainFields ?? DEFAULT_MAIN_FIELDS,
+
+    //// 解决程序包中 情景导出 时的其他允许条件
     conditions: config.resolve?.conditions ?? [],
+
+    //// 导入时想要省略的扩展名列表。
     extensions: config.resolve?.extensions ?? DEFAULT_EXTENSIONS,
+
+    //// 如果你在你的应用程序中有相同依赖的副本（比如 monorepos），请使用此选项强制 Vite 始终将列出的依赖项解析为同一副本（从项目根目录）
     dedupe: config.resolve?.dedupe ?? [],
+
+    //// 启用此选项会使 Vite 通过原始文件路径（即不跟随符号链接的路径）而不是真正的文件路径（即跟随符号链接后的路径）确定文件身份
     preserveSymlinks: config.resolve?.preserveSymlinks ?? false,
+
+    //// 将会被传递到 @rollup/plugin-alias 作为 entries 的选项
     alias: resolvedAlias,
   }
 
+  //// 弃用属性警告
   if (
     // @ts-expect-error removed field
     config.resolve?.browserField === false &&
@@ -539,18 +578,22 @@ export async function resolveConfig(
     )
   }
 
+  //// 加载env文件
   // load .env files
   const envDir = config.envDir
     ? normalizePath(path.resolve(resolvedRoot, config.envDir))
     : resolvedRoot
+
   const userEnv =
     inlineConfig.envFile !== false &&
     loadEnv(mode, envDir, resolveEnvPrefix(config))
 
+  //// mode配置自定义模式时如staging模式，只支持NODE_ENV为development
   // Note it is possible for user to have a custom mode, e.g. `staging` where
   // development-like behavior is expected. This is indicated by NODE_ENV=development
   // loaded from `.staging.env` and set by us as VITE_USER_NODE_ENV
   const userNodeEnv = process.env.VITE_USER_NODE_ENV
+
   if (!isNodeEnvSet && userNodeEnv) {
     if (userNodeEnv === 'development') {
       process.env.NODE_ENV = 'development'
@@ -564,12 +607,17 @@ export async function resolveConfig(
     }
   }
 
+  //// 生产模式
   const isProduction = process.env.NODE_ENV === 'production'
 
+  //// build命令
   // resolve public base url
   const isBuild = command === 'build'
+
+  //// 开发或生产环境服务的公共基础路径是相对路径
   const relativeBaseShortcut = config.base === '' || config.base === './'
 
+  //// dev和ssr固定为绝对路径
   // During dev, we ignore relative base and fallback to '/'
   // For the SSR build, relative base isn't possible by means
   // of import.meta.url.
@@ -579,12 +627,14 @@ export async function resolveConfig(
       : './'
     : resolveBaseUrl(config.base, isBuild, logger) ?? '/'
 
+  //// 解析build配置
   const resolvedBuildOptions = resolveBuildOptions(
     config.build,
     logger,
     resolvedRoot,
   )
 
+  //// TODO 下次再看
   // resolve cache directory
   const pkgDir = findNearestPackageData(resolvedRoot, packageCache)?.dir
   const cacheDir = normalizePath(
@@ -944,35 +994,48 @@ export async function loadConfigFromFile(
   config: UserConfig
   dependencies: string[]
 } | null> {
+  //// 构建的开始时间
   const start = performance.now()
+
+  //// 获取当前用时
   const getTime = () => `${(performance.now() - start).toFixed(2)}ms`
 
+  //// 解析的配置文件路径
   let resolvedPath: string | undefined
 
   if (configFile) {
+    //// 有configFile则直接使用
     // explicit config path is always resolved from cwd
     resolvedPath = path.resolve(configFile)
   } else {
+    //// 没有configFile则使用默认路径
     // implicit config file loaded from inline root (if present)
     // otherwise from cwd
     for (const filename of DEFAULT_CONFIG_FILES) {
       const filePath = path.resolve(configRoot, filename)
+
       if (!fs.existsSync(filePath)) continue
 
       resolvedPath = filePath
+
       break
     }
   }
 
+  //// 没有解析的配置文件路径则报错
   if (!resolvedPath) {
     debug?.('no config file found.')
     return null
   }
 
+  //// 是否esm路径，忽略了ts后缀因为打包默认支持ts
   const isESM = isFilePathESM(resolvedPath)
 
   try {
+    //// TODO 先打包
     const bundled = await bundleConfigFile(resolvedPath, isESM)
+
+    //// TODO 再解析用户配置
     const userConfig = await loadConfigFromBundledFile(
       resolvedPath,
       bundled.code,
@@ -980,12 +1043,15 @@ export async function loadConfigFromFile(
     )
     debug?.(`bundled config file loaded in ${getTime()}`)
 
+    //// 获取真正的用户配置
     const config = await (typeof userConfig === 'function'
       ? userConfig(configEnv)
       : userConfig)
+
     if (!isObject(config)) {
       throw new Error(`config must export or return an object.`)
     }
+
     return {
       path: normalizePath(resolvedPath),
       config,

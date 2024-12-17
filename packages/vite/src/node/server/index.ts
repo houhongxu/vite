@@ -366,6 +366,7 @@ export interface ResolvedServerUrls {
   network: string[]
 }
 
+//// 套一层默认参数
 export function createServer(
   inlineConfig: InlineConfig = {},
 ): Promise<ViteDevServer> {
@@ -376,42 +377,63 @@ export async function _createServer(
   inlineConfig: InlineConfig = {},
   options: { ws: boolean },
 ): Promise<ViteDevServer> {
+  //// 解析并处理配置文件
   const config = await resolveConfig(inlineConfig, 'serve')
 
+  //// root和server
   const { root, server: serverConfig } = config
+
+  //// server.https https.createServer() 的 选项对象
   const httpsOptions = await resolveHttpsConfig(config.server.https)
+
+  //// server.middlewareMode 默认false，true则将vite服务返回为中间件
   const { middlewareMode } = serverConfig
 
+  //// 解析chokidar库配置
   const resolvedWatchOptions = resolveChokidarOptions(config, {
     disableGlobbing: true,
     ...serverConfig.watch,
   })
 
+  //// 使用connect库中间件创建中间件
   const middlewares = connect() as Connect.Server
+
+  //// middlewareMode开启则代表vite作为中间件，关闭则使用vite启动的http服务器
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
+
+  //// TODO websocket服务器
   const ws = createWebSocketServer(httpServer, config, httpsOptions)
 
+  //// 监听错误信息并处理
   if (httpServer) {
     setClientErrorHandler(httpServer, config.logger)
   }
 
+  //// 是否监听
   // eslint-disable-next-line eqeqeq
   const watchEnabled = serverConfig.watch !== null
+
+  //// chokidar库监听文件变动
   const watcher = watchEnabled
     ? (chokidar.watch(
         // config file dependencies and env file might be outside of root
         [root, ...config.configFileDependencies, config.envDir],
         resolvedWatchOptions,
       ) as FSWatcher)
-    : createNoopWatcher(resolvedWatchOptions)
+    : //// 新建一个空的函数watcher
+      createNoopWatcher(resolvedWatchOptions)
 
+  //// 模块依赖图
   const moduleGraph: ModuleGraph = new ModuleGraph((url, ssr) =>
+    //// ! container是利用闭包，执行前定义即可，调用所有插件中实现的 resolveId 钩子
     container.resolveId(url, undefined, { ssr }),
   )
 
+  //// 插件容器
   const container = await createPluginContainer(config, moduleGraph, watcher)
+
   const closeHttpServer = createServerCloseFn(httpServer)
 
   let exitProcess: () => void

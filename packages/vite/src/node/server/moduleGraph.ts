@@ -85,6 +85,7 @@ export type ResolvedUrl = [
   meta: object | null | undefined,
 ]
 
+//// 模块依赖图
 export class ModuleGraph {
   urlToModuleMap = new Map<string, ModuleNode>()
   idToModuleMap = new Map<string, ModuleNode>()
