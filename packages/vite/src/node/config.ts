@@ -407,12 +407,13 @@ export async function resolveConfig(
   //// inlineConfig是命令行配置，优先级更高
   let config = inlineConfig
 
-  //// 配置文件依赖
+  //// 配置文件的模块依赖
   let configFileDependencies: string[] = []
 
   //// 默认模式为development
   let mode = inlineConfig.mode || defaultMode
 
+  //// 是否配置了NODE_ENV
   const isNodeEnvSet = !!process.env.NODE_ENV
 
   //// 包缓存
@@ -436,17 +437,23 @@ export async function resolveConfig(
   //// configFile指明要使用的配置文件
   let { configFile } = config
 
-  //// configFile不是false时读取配置
   if (configFile !== false) {
+    //// configFile不是false时读取配置文件
     const loadResult = await loadConfigFromFile(
       configEnv,
       configFile,
       config.root,
       config.logLevel,
     )
+    
     if (loadResult) {
+      //// 命令行配置与配置文件合并
       config = mergeConfig(loadResult.config, config)
+
+      //// 保证配置文件绝对路径
       configFile = loadResult.path
+
+      //// 配置文件的模块依赖
       configFileDependencies = loadResult.dependencies
     }
   }
@@ -469,13 +476,13 @@ export async function resolveConfig(
     }
   }
 
-  //// 获取异步调用后的插件数组
+  //// 获取异步调用并扁平化后的插件对象数组
   // resolve plugins
   const rawUserPlugins = (
     (await asyncFlatten(config.plugins || [])) as Plugin[]
   ).filter(filterPlugin)
 
-  //// 插件数组根据enforce排序
+  //// 插件对象数组根据enforce排序
   const [prePlugins, normalPlugins, postPlugins] =
     sortUserPlugins(rawUserPlugins)
 
@@ -1004,11 +1011,11 @@ export async function loadConfigFromFile(
   let resolvedPath: string | undefined
 
   if (configFile) {
-    //// 有configFile则直接使用
+    //// 有configFile路径则直接使用
     // explicit config path is always resolved from cwd
     resolvedPath = path.resolve(configFile)
   } else {
-    //// 没有configFile则使用默认路径
+    //// 没有configFile路径则遍历使用默认路径直到找到文件
     // implicit config file loaded from inline root (if present)
     // otherwise from cwd
     for (const filename of DEFAULT_CONFIG_FILES) {
@@ -1022,7 +1029,7 @@ export async function loadConfigFromFile(
     }
   }
 
-  //// 没有解析的配置文件路径则报错
+  //// 没有找到配置文件路径则报错
   if (!resolvedPath) {
     debug?.('no config file found.')
     return null
@@ -1032,15 +1039,17 @@ export async function loadConfigFromFile(
   const isESM = isFilePathESM(resolvedPath)
 
   try {
-    //// TODO 先打包
+    //// 先打包并读取配置文件
     const bundled = await bundleConfigFile(resolvedPath, isESM)
 
-    //// TODO 再解析用户配置
+    //// 再解析用户配置
     const userConfig = await loadConfigFromBundledFile(
       resolvedPath,
       bundled.code,
       isESM,
     )
+
+    ////log配置文件加载时间
     debug?.(`bundled config file loaded in ${getTime()}`)
 
     //// 获取真正的用户配置
@@ -1048,13 +1057,16 @@ export async function loadConfigFromFile(
       ? userConfig(configEnv)
       : userConfig)
 
+    //// 配置不是对象则报错
     if (!isObject(config)) {
       throw new Error(`config must export or return an object.`)
     }
 
     return {
+      //// 保证绝对路径
       path: normalizePath(resolvedPath),
       config,
+      //// 配置文件的模块依赖
       dependencies: bundled.dependencies,
     }
   } catch (e) {
