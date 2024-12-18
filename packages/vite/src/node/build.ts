@@ -475,6 +475,7 @@ export async function build(
   //// vite lib配置，以库的形式构建
   const libOptions = options.lib
 
+  //// log信息 version ssr mode
   config.logger.info(
     colors.cyan(
       `vite v${VERSION} ${colors.green(
@@ -483,6 +484,7 @@ export async function build(
     ),
   )
 
+  //// 补全传入的路径为绝对路径，相对于config.root路径
   const resolve = (p: string) => path.resolve(config.root, p)
 
   //// 获取入口，这嵌套太多了吧
@@ -526,8 +528,10 @@ export async function build(
     }
   }
 
+  //// 产物输出文件夹，如dist
   const outDir = resolve(options.outDir)
 
+  //// 在插件中注入ssr开启的标记
   // inject ssr arg to plugin load/transform hooks
   const plugins = (
     ssr ? config.plugins.map((p) => injectSsrFlagToHooks(p)) : config.plugins
@@ -575,7 +579,7 @@ export async function build(
   let bundle: RollupBuild | undefined
 
   try {
-    //// 格式化output阶段配置
+    //// 获取格式化output阶段配置，注意是函数
     const buildOutputOptions = (output: OutputOptions = {}): OutputOptions => {
       // @ts-expect-error See https://github.com/vitejs/vite/issues/5812#issuecomment-984345618
       if (output.output) {
@@ -651,7 +655,7 @@ export async function build(
       }
     }
 
-    //// 解析vite lib模式的output
+    //// 获取解析vite lib模式后的output配置
     // resolve lib mode outputs
     const outputs = resolveBuildOutputs(
       options.rollupOptions?.output,
@@ -659,7 +663,7 @@ export async function build(
       config.logger,
     )
 
-    //// 收集output配置
+    //// 收集格式化后的output配置
     const normalizedOutputs: OutputOptions[] = []
 
     if (Array.isArray(outputs)) {
