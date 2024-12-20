@@ -486,7 +486,7 @@ export async function resolveConfig(
   const [prePlugins, normalPlugins, postPlugins] =
     sortUserPlugins(rawUserPlugins)
 
-  //// 执行插件config钩子，在解析 Vite 配置前调用
+  //// 执行插件config钩子，串行执行sequential，在解析 Vite 配置前调用
   // run config hooks
   const userPlugins = [...prePlugins, ...normalPlugins, ...postPlugins]
 
@@ -614,17 +614,17 @@ export async function resolveConfig(
     }
   }
 
-  //// 生产模式
+  //// 是否生产模式
   const isProduction = process.env.NODE_ENV === 'production'
 
-  //// build命令
+  //// 是否build命令
   // resolve public base url
   const isBuild = command === 'build'
 
-  //// 开发或生产环境服务的公共基础路径是相对路径
+  //// base是否相对路径，开发或生产环境服务的公共基础路径
   const relativeBaseShortcut = config.base === '' || config.base === './'
 
-  //// dev和ssr固定为绝对路径
+  //// dev和ssr固定为根绝对路径
   // During dev, we ignore relative base and fallback to '/'
   // For the SSR build, relative base isn't possible by means
   // of import.meta.url.
