@@ -146,7 +146,7 @@ export function createPluginHookUtils(
   }
 }
 
-//// 获取根据某个hook排序后的插件
+//// 获取根据指定hook排序后的插件
 export function getSortedPluginsByHook<K extends keyof Plugin>(
   hookName: K,
   plugins: readonly Plugin[],
@@ -167,11 +167,13 @@ export function getSortedPluginsByHook<K extends keyof Plugin>(
           pre.push(plugin)
           continue
         }
+
         if (hook.order === 'post') {
           post.push(plugin)
           continue
         }
       }
+
       normal.push(plugin)
     }
   }

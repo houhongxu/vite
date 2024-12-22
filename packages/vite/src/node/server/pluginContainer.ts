@@ -242,13 +242,13 @@ export async function createPluginContainer(
       const handler: Function = getHookHandler(hook)
 
       if ((hook as { sequential?: boolean }).sequential) {
-        //// 如果是串行的，并发执行之前收集的hook
+        //// 如果中间有一个是串行的，先并发执行之前收集的hook
         await Promise.all(parallelPromises)
 
         //// 清除收集的hook
         parallelPromises.length = 0
 
-        //// 执行hook
+        //// 执行这个串行的hook
         await handler.apply(context(plugin), args(plugin))
       } else {
         //// 如果不是串行的，收集这个hook

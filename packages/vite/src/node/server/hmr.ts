@@ -51,6 +51,7 @@ export function getShortName(file: string, root: string): string {
     : file
 }
 
+//// 处理热更新
 export async function handleHMRUpdate(
   file: string,
   server: ViteDevServer,

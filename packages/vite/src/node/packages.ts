@@ -123,6 +123,7 @@ export function findNearestPackageData(
   packageCache?: PackageCache,
 ): PackageData | null {
   const originalBasedir = basedir
+
   while (basedir) {
     if (packageCache) {
       const cached = getFnpdCache(packageCache, basedir, originalBasedir)

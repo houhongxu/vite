@@ -416,7 +416,7 @@ export async function resolveConfig(
   //// 是否配置了NODE_ENV
   const isNodeEnvSet = !!process.env.NODE_ENV
 
-  //// 包缓存
+  //// 预构建等包的缓存
   const packageCache: PackageCache = new Map()
 
   //// 默认NODE_ENV为development
@@ -445,7 +445,7 @@ export async function resolveConfig(
       config.root,
       config.logLevel,
     )
-    
+
     if (loadResult) {
       //// 命令行配置与配置文件合并
       config = mergeConfig(loadResult.config, config)
@@ -641,9 +641,10 @@ export async function resolveConfig(
     resolvedRoot,
   )
 
-  //// TODO 下次再看
+  //// 解析预构建等缓存目录
   // resolve cache directory
   const pkgDir = findNearestPackageData(resolvedRoot, packageCache)?.dir
+
   const cacheDir = normalizePath(
     config.cacheDir
       ? path.resolve(resolvedRoot, config.cacheDir)
@@ -652,29 +653,40 @@ export async function resolveConfig(
         : path.join(resolvedRoot, `.vite`),
   )
 
+  //// 资源根据assetsInclude筛选，指定额外的 picomatch 模式 作为静态资源处理
   const assetsFilter =
     config.assetsInclude &&
     (!Array.isArray(config.assetsInclude) || config.assetsInclude.length)
       ? createFilter(config.assetsInclude)
       : () => false
 
+  //// 创建内部的模块id解析器的函数
   // create an internal resolver to be used in special scenarios, e.g.
   // optimizer & handling css @imports
   const createResolver: ResolvedConfig['createResolver'] = (options) => {
+    //// 别名解析插件容器
     let aliasContainer: PluginContainer | undefined
+    //// id解析插件容器
     let resolverContainer: PluginContainer | undefined
+
+    //// 返回解析器函数
     return async (id, importer, aliasOnly, ssr) => {
       let container: PluginContainer
+
       if (aliasOnly) {
+        //// 只解析别名
         container =
           aliasContainer ||
+          //// 创建插件容器并将@rollup/plugin-alias 内置
           (aliasContainer = await createPluginContainer({
             ...resolved,
             plugins: [aliasPlugin({ entries: resolved.resolve.alias })],
           }))
       } else {
+        //// 解析别名和id
         container =
           resolverContainer ||
+          //// 创建插件容器并将@rollup/plugin-alias 和vite内部resolve插件内置
           (resolverContainer = await createPluginContainer({
             ...resolved,
             plugins: [
@@ -694,6 +706,8 @@ export async function resolveConfig(
             ],
           }))
       }
+
+      //// 返回插件容器调用resolveId的结果
       return (
         await container.resolveId(id, importer, {
           ssr,
@@ -703,6 +717,7 @@ export async function resolveConfig(
     }
   }
 
+  //// 解析publicDir，作为静态资源服务的文件夹
   const { publicDir } = config
   const resolvedPublicDir =
     publicDir !== false && publicDir !== ''
@@ -712,15 +727,22 @@ export async function resolveConfig(
         )
       : ''
 
+  //// 解析server配置
   const server = resolveServerOptions(resolvedRoot, config.server, logger)
+
+  //// 解析ssr配置
   const ssr = resolveSSROptions(config.ssr, resolveOptions.preserveSymlinks)
 
+  //// optimizeDeps配置，预构建依赖
   const optimizeDeps = config.optimizeDeps || {}
 
+  //// 解析后的base
   const BASE_URL = resolvedBase
 
+  //// 定义解析后的配置
   let resolved: ResolvedConfig
 
+  //// worker插件配置警告
   let createUserWorkerPlugins = config.worker?.plugins
   if (Array.isArray(createUserWorkerPlugins)) {
     // @ts-expect-error backward compatibility
@@ -734,6 +756,7 @@ export async function resolveConfig(
     )
   }
 
+  //// 解析后的worker的插件的
   const createWorkerPlugins = async function () {
     // Some plugins that aren't intended to work in the bundling of workers (doing post-processing at build time for example).
     // And Plugins may also have cached that could be corrupted by being used in these extra rollup calls.
@@ -772,6 +795,7 @@ export async function resolveConfig(
       workerPostPlugins,
     )
 
+    //// 并行执行configResolved hook
     // run configResolved hooks
     createPluginHookUtils(resolvedWorkerPlugins)
       .getSortedPluginHooks('configResolved')
@@ -780,12 +804,14 @@ export async function resolveConfig(
     return resolvedWorkerPlugins
   }
 
+  //// 解析后的woker配置
   const resolvedWorkerOptions: ResolvedWorkerOptions = {
     format: config.worker?.format || 'iife',
     plugins: createWorkerPlugins,
     rollupOptions: config.worker?.rollupOptions || {},
   }
 
+  //// 解析后的配置一一组合
   resolved = {
     configFile: configFile ? normalizePath(configFile) : undefined,
     configFileDependencies: configFileDependencies.map((name) =>
@@ -858,14 +884,19 @@ export async function resolveConfig(
     normalPlugins,
     postPlugins,
   )
+
+  //// 插件处理函数也挂上
   Object.assign(resolved, createPluginHookUtils(resolved.plugins))
 
+  //// 并行configResolved hook
   // call configResolved hooks
   await Promise.all(
     resolved
       .getSortedPluginHooks('configResolved')
       .map((hook) => hook(resolved)),
   )
+
+  //// 后面是一些日志提示
 
   debug?.(`using resolved config: %O`, {
     ...resolved,
@@ -1279,6 +1310,7 @@ async function loadConfigFromBundledFile(
   }
 }
 
+//// 执行config hook
 async function runConfigHook(
   config: InlineConfig,
   plugins: Plugin[],
@@ -1286,12 +1318,19 @@ async function runConfigHook(
 ): Promise<InlineConfig> {
   let conf = config
 
+  //// 遍历插件
   for (const p of getSortedPluginsByHook('config', plugins)) {
+    //// 获取config hook
     const hook = p.config
+
+    //// 获取hook 函数
     const handler = getHookHandler(hook)
+
     if (handler) {
       const res = await handler(conf, configEnv)
+
       if (res) {
+        //// 合并配置
         conf = mergeConfig(conf, res)
       }
     }

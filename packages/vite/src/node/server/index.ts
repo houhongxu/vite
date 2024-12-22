@@ -398,12 +398,12 @@ export async function _createServer(
   //// 使用connect库中间件创建中间件
   const middlewares = connect() as Connect.Server
 
-  //// middlewareMode开启则代表vite作为中间件，关闭则使用vite启动的http服务器
+  //// 创建http服务器，middlewareMode开启则代表vite作为中间件，关闭则使用vite启动的http服务器
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
 
-  //// TODO websocket服务器
+  //// 创建websocket服务器
   const ws = createWebSocketServer(httpServer, config, httpsOptions)
 
   //// 监听错误信息并处理
@@ -431,9 +431,10 @@ export async function _createServer(
     container.resolveId(url, undefined, { ssr }),
   )
 
-  //// 插件容器
+  //// 创建插件容器
   const container = await createPluginContainer(config, moduleGraph, watcher)
 
+  ////  获取关闭http服务器的函数
   const closeHttpServer = createServerCloseFn(httpServer)
 
   let exitProcess: () => void
@@ -660,7 +661,7 @@ export async function _createServer(
     }
   }
 
-  //// TODO hmr处理
+  //// hmr处理
   const onHMRUpdate = async (file: string, configOnly: boolean) => {
     if (serverConfig.hmr !== false) {
       try {
