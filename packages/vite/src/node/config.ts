@@ -407,7 +407,7 @@ export async function resolveConfig(
   //// inlineConfig是命令行配置，优先级更高
   let config = inlineConfig
 
-  //// 配置文件的模块依赖
+  //// 配置文件中的其他模块依赖
   let configFileDependencies: string[] = []
 
   //// 默认模式为development
@@ -660,7 +660,7 @@ export async function resolveConfig(
       ? createFilter(config.assetsInclude)
       : () => false
 
-  //// 创建内部的模块id解析器的函数
+  //// 创建内部的模块id解析器的函数，主要用在了依赖预构建
   // create an internal resolver to be used in special scenarios, e.g.
   // optimizer & handling css @imports
   const createResolver: ResolvedConfig['createResolver'] = (options) => {
@@ -874,10 +874,13 @@ export async function resolveConfig(
     getSortedPlugins: undefined!,
     getSortedPluginHooks: undefined!,
   }
+
   resolved = {
     ...config,
     ...resolved,
   }
+
+  //// 赋值与解析用户插件和内部插件
   ;(resolved.plugins as Plugin[]) = await resolvePlugins(
     resolved,
     prePlugins,
@@ -960,6 +963,7 @@ assetFileNames isn't equal for every build.rollupOptions.output. A single patter
   return resolved
 }
 
+//// 解析base
 /**
  * Resolve base url. Note that some users use Vite to build for non-web targets like
  * electron or expects to deploy
@@ -1004,6 +1008,7 @@ export function resolveBaseUrl(
   return base
 }
 
+//// 根据enforce排序插件
 export function sortUserPlugins(
   plugins: (Plugin | Plugin[])[] | undefined,
 ): [Plugin[], Plugin[], Plugin[]] {
@@ -1022,6 +1027,7 @@ export function sortUserPlugins(
   return [prePlugins, normalPlugins, postPlugins]
 }
 
+//// 加载配置文件
 export async function loadConfigFromFile(
   configEnv: ConfigEnv,
   configFile?: string,
@@ -1070,7 +1076,7 @@ export async function loadConfigFromFile(
   const isESM = isFilePathESM(resolvedPath)
 
   try {
-    //// 先打包并读取配置文件
+    //// 先用esbuild打包配置文件为js
     const bundled = await bundleConfigFile(resolvedPath, isESM)
 
     //// 再解析用户配置
@@ -1109,6 +1115,7 @@ export async function loadConfigFromFile(
   }
 }
 
+//// esbuild打包配置文件为js
 async function bundleConfigFile(
   fileName: string,
   isESM: boolean,
@@ -1116,6 +1123,7 @@ async function bundleConfigFile(
   const dirnameVarName = '__vite_injected_original_dirname'
   const filenameVarName = '__vite_injected_original_filename'
   const importMetaUrlVarName = '__vite_injected_original_import_meta_url'
+
   const result = await build({
     absWorkingDir: process.cwd(),
     entryPoints: [fileName],
@@ -1263,7 +1271,10 @@ interface NodeModuleWithCompile extends NodeModule {
   _compile(code: string, filename: string): any
 }
 
+//// esm模拟require
 const _require = createRequire(import.meta.url)
+
+//// 加载配置文件模块内容
 async function loadConfigFromBundledFile(
   fileName: string,
   bundledCode: string,
@@ -1273,39 +1284,65 @@ async function loadConfigFromBundledFile(
   // with --experimental-loader themselves, we have to do a hack here:
   // write it to disk, load it with native Node ESM, then delete the file.
   if (isESM) {
+    //// 组合esm文件路径
     const fileBase = `${fileName}.timestamp-${Date.now()}-${Math.random()
       .toString(16)
       .slice(2)}`
+
     const fileNameTmp = `${fileBase}.mjs`
+
     const fileUrl = `${pathToFileURL(fileBase)}.mjs`
+
+    //// 这种先编译配置文件，再将产物写入临时目录，最后加载临时目录产物的做法，是 AOT (Ahead Of Time)编译技术的一种具体实现
+
+    //// 写入成文件
     await fsp.writeFile(fileNameTmp, bundledCode)
+
     try {
+      //// 动态导入
       return (await import(fileUrl)).default
     } finally {
+      //// 删除文件
       fs.unlink(fileNameTmp, () => {}) // Ignore errors
     }
   }
+
+  //// 通过拦截尚未淘汰的历史属性require.extensions加载cjs
   // for cjs, we can register a custom loader via `_require.extensions`
   else {
+    //// 获取文件扩展名
     const extension = path.extname(fileName)
     // We don't use fsp.realpath() here because it has the same behaviour as
     // fs.realpath.native. On some Windows systems, it returns uppercase volume
     // letters (e.g. "C:\") while the Node.js loader uses lowercase volume letters.
     // See https://github.com/vitejs/vite/issues/12923
+    //// 配置文件真实路径
     const realFileName = await promisifiedRealpath(fileName)
+
+    //// 需要是require支持的后缀，否则用.js
     const loaderExt = extension in _require.extensions ? extension : '.js'
+
+    //// 获取默认加载器
     const defaultLoader = _require.extensions[loaderExt]!
+
+    //// 拦截原生require的加载函数，单独处理配置文件
     _require.extensions[loaderExt] = (module: NodeModule, filename: string) => {
       if (filename === realFileName) {
+        //// 是配置文件时使用node内部模块编译执行函数执行配置文件代码
         ;(module as NodeModuleWithCompile)._compile(bundledCode, filename)
       } else {
         defaultLoader(module, filename)
       }
     }
+
+    //// 清除 require 缓存保证下次加载是新代码
     // clear cache in case of server restart
     delete _require.cache[_require.resolve(fileName)]
+
     const raw = _require(fileName)
+
     _require.extensions[loaderExt] = defaultLoader
+
     return raw.__esModule ? raw.default : raw
   }
 }
